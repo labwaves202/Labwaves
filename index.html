@@ -34,9 +34,9 @@ let bannerRows = bannerLines.length + 1;
 let u=null, uPrev=null, uNext=null;
 
 // Tuned for: small, local ripples
-let damping = 0.060;        // stronger damping => ripples die quickly
+let damping = 0.100;        // stronger damping => ripples die quickly
 let c2 = 0.055;             // slower propagation => less spread
-let impulseStrength = 0.55; // smaller impulse amplitude
+let impulseStrength = 0.4; // smaller impulse amplitude
 let impulseRadius = 1;      // 1 => very local (3x3 area)
 
 // Visuals
@@ -176,3 +176,4 @@ requestAnimationFrame(loop);
 </script>
 </body>
 </html>
+
