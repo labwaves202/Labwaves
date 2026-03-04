@@ -4,83 +4,221 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LABWAVES</title>
-
   <style>
-    body {
+    html, body {
       margin: 0;
-      height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: radial-gradient(circle at center, #0a0a0f 0%, #000 70%);
-      color: #fff;
-      font-family: system-ui, -apple-system, sans-serif;
+      height: 100%;
+      background: #000;
       overflow: hidden;
+      cursor: crosshair;
     }
-
-    .container {
-      display: flex;
-      align-items: center;
-      gap: 60px;
-      max-width: 1000px;
-      padding: 40px;
-    }
-
-    img {
-      width: 220px;
-      height: auto;
-      filter: drop-shadow(0 0 25px rgba(0, 255, 200, 0.4));
-      animation: pulse 4s ease-in-out infinite;
-    }
-
-    h1 {
-      font-weight: 300;
-      letter-spacing: 0.08em;
-      font-size: clamp(22px, 3vw, 32px);
-      margin: 0;
-      text-transform: lowercase;
-      animation: glow 3s ease-in-out infinite alternate;
-    }
-
-    @keyframes pulse {
-      0% { transform: scale(1); }
-      50% { transform: scale(1.04); }
-      100% { transform: scale(1); }
-    }
-
-    @keyframes glow {
-      from {
-        text-shadow:
-          0 0 5px rgba(0,255,200,0.4),
-          0 0 10px rgba(0,255,200,0.3),
-          0 0 20px rgba(0,255,200,0.2);
-      }
-      to {
-        text-shadow:
-          0 0 10px rgba(0,255,200,0.7),
-          0 0 20px rgba(0,255,200,0.5),
-          0 0 40px rgba(0,255,200,0.4);
-      }
-    }
-
-    @media (max-width: 800px) {
-      .container {
-        flex-direction: column;
-        text-align: center;
-        gap: 40px;
-      }
-
-      img {
-        width: 180px;
-      }
-    }
+    canvas { display: block; }
   </style>
 </head>
-
 <body>
-  <div class="container">
-    <img src="assets/labwaves.png" alt="LABWAVES Logo">
-    <h1>willkommen zu labwaves. coming soon...</h1>
-  </div>
+<canvas id="c"></canvas>
+
+<script>
+/**
+ * 2D discrete wave equation (finite differences):
+ * u_next = (2 - damping) * u - (1 - damping) * u_prev + c^2 * Laplacian(u)
+ * Laplacian(u) ≈ u(x+1,y)+u(x-1,y)+u(x,y+1)+u(x,y-1) - 4u(x,y)
+ *
+ * Click -> add impulse to u at grid cell (like a water droplet).
+ */
+
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+let W = 0, H = 0;
+let cols = 0, rows = 0;
+let cellW = 0, cellH = 0;
+
+// Grid state
+let u = null;       // current displacement
+let uPrev = null;   // previous displacement
+let uNext = null;   // next displacement
+
+// Simulation params (tune feel)
+let damping = 0.010;      // energy loss per step (0..~0.03)
+let c2 = 0.20;            // wave speed^2 factor (stability-sensitive)
+let impulseStrength = 2.2; // click impulse magnitude
+
+// Visual
+const bg = "#000000";
+const bannerColor = "#ffffff";
+const waveColor = "#00ffc8";
+const fontPx = 16;
+
+// Banner (ASCII art)
+const bannerLines = [
+  "██╗      █████╗ ██████╗ ██╗    ██╗ █████╗ ██╗   ██╗███████╗███████╗",
+  "██║     ██╔══██╗██╔══██╗██║    ██║██╔══██╗██║   ██║██╔════╝██╔════╝",
+  "██║     ███████║██████╔╝██║ █╗ ██║███████║██║   ██║█████╗  ███████╗",
+  "██║     ██╔══██║██╔══██╗██║███╗██║██╔══██║╚██╗ ██╔╝██╔══╝  ╚════██║",
+  "███████╗██║  ██║██████╔╝╚███╔███╔╝██║  ██║ ╚████╔╝ ███████╗███████║",
+  "╚══════╝╚═╝  ╚═╝╚═════╝  ╚══╝╚══╝ ╚═╝  ╚═╝  ╚═══╝  ╚══════╝╚══════╝",
+];
+
+let bannerRows = bannerLines.length + 1; // +1 spacing row
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+
+  ctx.font = `${fontPx}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`;
+  ctx.textBaseline = "top";
+
+  // Estimate character cell size
+  // Monospace: width ≈ 0.6*fontPx; height ≈ fontPx*1.1
+  cellH = Math.round(fontPx * 1.15);
+  cellW = Math.round(fontPx * 0.62);
+
+  cols = Math.max(10, Math.floor(W / cellW));
+  rows = Math.max(10, Math.floor(H / cellH));
+
+  // Keep banner from overlapping too much on small screens
+  bannerRows = Math.min(rows - 2, bannerLines.length + 1);
+
+  // Init wave grid only for the area below banner
+  const simRows = Math.max(1, rows - bannerRows);
+
+  u = new Float32Array(cols * simRows);
+  uPrev = new Float32Array(cols * simRows);
+  uNext = new Float32Array(cols * simRows);
+}
+
+window.addEventListener("resize", resize);
+resize();
+
+// Helpers
+function idx(x, y, simRows) {
+  return y * cols + x;
+}
+
+// Click -> impulse
+canvas.addEventListener("click", (e) => {
+  const x = Math.floor(e.clientX / cellW);
+  const yAll = Math.floor(e.clientY / cellH);
+
+  // Ignore clicks in banner area
+  if (yAll < bannerRows) return;
+
+  const simY = yAll - bannerRows;
+  const simRows = rows - bannerRows;
+  if (x < 0 || x >= cols || simY < 0 || simY >= simRows) return;
+
+  // Add a small gaussian-ish impulse around the click for nicer ripples
+  const r = 3;
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const xx = x + dx;
+      const yy = simY + dy;
+      if (xx < 0 || xx >= cols || yy < 0 || yy >= simRows) continue;
+      const d2 = dx*dx + dy*dy;
+      const w = Math.exp(-d2 / 4); // soft drop
+      u[idx(xx, yy, simRows)] += impulseStrength * w;
+    }
+  }
+});
+
+// Simulation step
+function stepSim() {
+  const simRows = rows - bannerRows;
+  if (simRows <= 0) return;
+
+  // Stability tip: for this simple 5-point Laplacian, keep c2 modest.
+  // Boundaries: fixed (Dirichlet) => edges ~ 0 (like pinned water surface).
+  for (let y = 0; y < simRows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+
+      // Fixed boundary
+      if (x === 0 || x === cols - 1 || y === 0 || y === simRows - 1) {
+        uNext[i] = 0;
+        continue;
+      }
+
+      const up = u[i - cols];
+      const down = u[i + cols];
+      const left = u[i - 1];
+      const right = u[i + 1];
+      const center = u[i];
+
+      const lap = (up + down + left + right - 4 * center);
+
+      // Discrete wave equation with damping
+      const next =
+        (2 - damping) * center -
+        (1 - damping) * uPrev[i] +
+        c2 * lap;
+
+      uNext[i] = next;
+    }
+  }
+
+  // Rotate buffers: prev <- current, current <- next
+  const tmp = uPrev;
+  uPrev = u;
+  u = uNext;
+  uNext = tmp;
+}
+
+// Rendering
+function render() {
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Banner
+  ctx.fillStyle = bannerColor;
+  const bannerStartX = Math.max(0, Math.floor((cols - bannerLines[0].length) / 2));
+  for (let i = 0; i < Math.min(bannerLines.length, bannerRows - 1); i++) {
+    const line = bannerLines[i];
+    ctx.fillText(line, bannerStartX * cellW, i * cellH);
+  }
+
+  // Draw wave field as ~ and -
+  ctx.fillStyle = waveColor;
+
+  const simRows = rows - bannerRows;
+  if (simRows <= 0) return;
+
+  // Thresholds: decide when ~ becomes -
+  // Using displacement magnitude: crest/trough -> '-'
+  const thr = 0.18; // sensitivity
+
+  for (let y = 0; y < simRows; y++) {
+    const yPix = (y + bannerRows) * cellH;
+    for (let x = 0; x < cols; x++) {
+      const xPix = x * cellW;
+      const val = u[y * cols + x];
+
+      // Optional: more character nuance, but you asked only ~ and -
+      const ch = (Math.abs(val) > thr) ? "-" : "~";
+      ctx.fillText(ch, xPix, yPix);
+    }
+  }
+
+  // Small “hint”
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.fillText("click to ripple", 2 * cellW, (bannerRows - 1) * cellH);
+}
+
+let last = performance.now();
+function loop(t) {
+  // Fixed-ish stepping: multiple sim steps if frame time is big
+  const dt = Math.min(50, t - last);
+  last = t;
+
+  // substeps for stability / smoother propagation
+  const substeps = Math.max(1, Math.floor(dt / 16));
+  for (let i = 0; i < substeps; i++) stepSim();
+
+  render();
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
 </body>
 </html>
