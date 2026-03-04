@@ -30,24 +30,25 @@ const bannerLines = [
 ];
 let bannerRows = bannerLines.length + 1;
 
-// Wave sim buffers (only below banner)
+// Wave buffers for area below banner
 let u=null, uPrev=null, uNext=null;
 
-// Tuned for: small, local ripples
-let damping = 0.090;        // stronger damping => ripples die quickly
-let c2 = 0.01;             // slower propagation => less spread
-let impulseStrength = 0.1; // smaller impulse amplitude
-let impulseRadius = 3;      // 1 => very local (3x3 area)
+// Physics tuned for SMALL, LOCAL ripples
+let damping = 0.085;        // higher => shorter-lived, less overlap
+let c2 = 0.045;             // lower => less spread
+let impulseStrength = 0.35; // smaller impulse
+let impulseRadius = 0;      // 0 = single cell (clean rings)
 
-// Visuals
+// Render thresholds
+let lapThr = 0.16;          // threshold on curvature -> thinner fronts
 const bg = "#000000";
 const bannerColor = "#ffffff";
 const waveColor = "#00ffc8";
-const thr = 0.14;           // threshold for '-' vs '~' (slightly sensitive)
 
-// Mouse tracking + throttle
+// Mouse impulse throttling (key to avoid “blob”)
 let lastStamp = 0;
 let lastCellX = -999, lastCellY = -999;
+const IMPULSE_COOLDOWN_MS = 55; // fewer impulses => less overlap
 
 function resize(){
   W = canvas.width = window.innerWidth;
@@ -79,20 +80,19 @@ function addImpulseAtCell(x, ySim){
   const r = impulseRadius;
   for (let dy=-r; dy<=r; dy++){
     for (let dx=-r; dx<=r; dx++){
-      const xx = x + dx;
-      const yy = ySim + dy;
-      if (xx < 1 || xx >= cols-1 || yy < 1 || yy >= simRows-1) continue;
+      const xx = x + dx, yy = ySim + dy;
+      if (xx <= 0 || xx >= cols-1 || yy <= 0 || yy >= simRows-1) continue;
       const d2 = dx*dx + dy*dy;
-      const w = Math.exp(-d2 / 1.2); // tight gaussian
+      const w = (r === 0) ? 1 : Math.exp(-d2 / 1.2);
       u[yy*cols + xx] += impulseStrength * w;
     }
   }
 }
 
-// Mouse-over -> small impulse (throttled + only when cell changes)
+// Mouse-over generates tiny ripple, not continuous “painting”
 canvas.addEventListener("mousemove", (e) => {
   const now = performance.now();
-  if (now - lastStamp < 22) return; // ~45 impulses/sec max
+  if (now - lastStamp < IMPULSE_COOLDOWN_MS) return;
   lastStamp = now;
 
   const x = Math.floor(e.clientX / cellW);
@@ -100,12 +100,15 @@ canvas.addEventListener("mousemove", (e) => {
   if (yAll < bannerRows) return;
 
   const ySim = yAll - bannerRows;
-  if (x === lastCellX && ySim === lastCellY) return; // only when entering a new cell
+
+  // Only when entering a NEW cell
+  if (x === lastCellX && ySim === lastCellY) return;
   lastCellX = x; lastCellY = ySim;
 
   addImpulseAtCell(x, ySim);
 });
 
+// Wave equation step
 function stepSim(){
   const simRows = rows - bannerRows;
   if (simRows <= 0) return;
@@ -114,7 +117,7 @@ function stepSim(){
     for (let x=0; x<cols; x++){
       const i = y*cols + x;
 
-      // fixed boundary
+      // fixed boundaries (pinned)
       if (x===0 || x===cols-1 || y===0 || y===simRows-1){
         uNext[i] = 0;
         continue;
@@ -130,31 +133,37 @@ function stepSim(){
     }
   }
 
-  const tmp = uPrev;
-  uPrev = u;
-  u = uNext;
-  uNext = tmp;
+  const tmp = uPrev; uPrev = u; u = uNext; uNext = tmp;
 }
 
 function render(){
   ctx.fillStyle = bg;
   ctx.fillRect(0,0,W,H);
 
-  // banner
+  // Banner
   ctx.fillStyle = bannerColor;
   const startX = Math.max(0, Math.floor((cols - bannerLines[0].length) / 2));
   for (let i=0; i<Math.min(bannerLines.length, bannerRows-1); i++){
     ctx.fillText(bannerLines[i], startX * cellW, i * cellH);
   }
 
-  // waves
+  // Waves: render by CURVATURE (Laplacian) -> shows thin fronts (rings)
   ctx.fillStyle = waveColor;
   const simRows = rows - bannerRows;
+
   for (let y=0; y<simRows; y++){
     const yPix = (y + bannerRows) * cellH;
     for (let x=0; x<cols; x++){
-      const val = u[y*cols + x];
-      const ch = (Math.abs(val) > thr) ? "-" : "~";
+      const i = y*cols + x;
+
+      // compute laplacian for rendering too (skip edges)
+      let lap = 0;
+      if (x>0 && x<cols-1 && y>0 && y<simRows-1){
+        const center = u[i];
+        lap = (u[i-cols] + u[i+cols] + u[i-1] + u[i+1] - 4*center);
+      }
+
+      const ch = (Math.abs(lap) > lapThr) ? "-" : "~";
       ctx.fillText(ch, x * cellW, yPix);
     }
   }
@@ -165,8 +174,8 @@ function loop(t){
   const dt = Math.min(50, t - last);
   last = t;
 
-  // fewer substeps to keep it calmer
-  const substeps = Math.max(1, Math.floor(dt / 20));
+  // calmer sim
+  const substeps = Math.max(1, Math.floor(dt / 24));
   for (let i=0; i<substeps; i++) stepSim();
 
   render();
@@ -176,5 +185,3 @@ requestAnimationFrame(loop);
 </script>
 </body>
 </html>
-
-
