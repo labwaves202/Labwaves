@@ -5,52 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LABWAVES</title>
   <style>
-    html, body {
-      margin: 0;
-      height: 100%;
-      background: #000;
-      overflow: hidden;
-      cursor: crosshair;
-    }
-    canvas { display: block; }
+    html, body { margin:0; height:100%; background:#000; overflow:hidden; cursor:crosshair; }
+    canvas { display:block; }
   </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 
 <script>
-/**
- * 2D discrete wave equation (finite differences):
- * u_next = (2 - damping) * u - (1 - damping) * u_prev + c^2 * Laplacian(u)
- * Laplacian(u) ≈ u(x+1,y)+u(x-1,y)+u(x,y+1)+u(x,y-1) - 4u(x,y)
- *
- * Click -> add impulse to u at grid cell (like a water droplet).
- */
-
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
-let W = 0, H = 0;
-let cols = 0, rows = 0;
-let cellW = 0, cellH = 0;
-
-// Grid state
-let u = null;       // current displacement
-let uPrev = null;   // previous displacement
-let uNext = null;   // next displacement
-
-// Simulation params (tune feel)
-let damping = 0.010;      // energy loss per step (0..~0.03)
-let c2 = 0.20;            // wave speed^2 factor (stability-sensitive)
-let impulseStrength = 2.2; // click impulse magnitude
-
-// Visual
-const bg = "#000000";
-const bannerColor = "#ffffff";
-const waveColor = "#00ffc8";
+let W=0,H=0, cols=0, rows=0, cellW=0, cellH=0;
 const fontPx = 16;
 
-// Banner (ASCII art)
+// Banner
 const bannerLines = [
   "██╗      █████╗ ██████╗ ██╗    ██╗ █████╗ ██╗   ██╗███████╗███████╗",
   "██║     ██╔══██╗██╔══██╗██║    ██║██╔══██╗██║   ██║██╔════╝██╔════╝",
@@ -59,165 +28,150 @@ const bannerLines = [
   "███████╗██║  ██║██████╔╝╚███╔███╔╝██║  ██║ ╚████╔╝ ███████╗███████║",
   "╚══════╝╚═╝  ╚═╝╚═════╝  ╚══╝╚══╝ ╚═╝  ╚═╝  ╚═══╝  ╚══════╝╚══════╝",
 ];
+let bannerRows = bannerLines.length + 1;
 
-let bannerRows = bannerLines.length + 1; // +1 spacing row
+// Wave sim buffers (only below banner)
+let u=null, uPrev=null, uNext=null;
 
-function resize() {
+// Tuned for: small, local ripples
+let damping = 0.060;        // stronger damping => ripples die quickly
+let c2 = 0.055;             // slower propagation => less spread
+let impulseStrength = 0.55; // smaller impulse amplitude
+let impulseRadius = 1;      // 1 => very local (3x3 area)
+
+// Visuals
+const bg = "#000000";
+const bannerColor = "#ffffff";
+const waveColor = "#00ffc8";
+const thr = 0.14;           // threshold for '-' vs '~' (slightly sensitive)
+
+// Mouse tracking + throttle
+let lastStamp = 0;
+let lastCellX = -999, lastCellY = -999;
+
+function resize(){
   W = canvas.width = window.innerWidth;
   H = canvas.height = window.innerHeight;
 
   ctx.font = `${fontPx}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`;
   ctx.textBaseline = "top";
 
-  // Estimate character cell size
-  // Monospace: width ≈ 0.6*fontPx; height ≈ fontPx*1.1
   cellH = Math.round(fontPx * 1.15);
   cellW = Math.round(fontPx * 0.62);
 
   cols = Math.max(10, Math.floor(W / cellW));
   rows = Math.max(10, Math.floor(H / cellH));
 
-  // Keep banner from overlapping too much on small screens
   bannerRows = Math.min(rows - 2, bannerLines.length + 1);
-
-  // Init wave grid only for the area below banner
   const simRows = Math.max(1, rows - bannerRows);
 
   u = new Float32Array(cols * simRows);
   uPrev = new Float32Array(cols * simRows);
   uNext = new Float32Array(cols * simRows);
 }
-
 window.addEventListener("resize", resize);
 resize();
 
-// Helpers
-function idx(x, y, simRows) {
-  return y * cols + x;
-}
-
-// Click -> impulse
-canvas.addEventListener("click", (e) => {
-  const x = Math.floor(e.clientX / cellW);
-  const yAll = Math.floor(e.clientY / cellH);
-
-  // Ignore clicks in banner area
-  if (yAll < bannerRows) return;
-
-  const simY = yAll - bannerRows;
+function addImpulseAtCell(x, ySim){
   const simRows = rows - bannerRows;
-  if (x < 0 || x >= cols || simY < 0 || simY >= simRows) return;
+  if (x <= 0 || x >= cols-1 || ySim <= 0 || ySim >= simRows-1) return;
 
-  // Add a small gaussian-ish impulse around the click for nicer ripples
-  const r = 3;
-  for (let dy = -r; dy <= r; dy++) {
-    for (let dx = -r; dx <= r; dx++) {
+  const r = impulseRadius;
+  for (let dy=-r; dy<=r; dy++){
+    for (let dx=-r; dx<=r; dx++){
       const xx = x + dx;
-      const yy = simY + dy;
-      if (xx < 0 || xx >= cols || yy < 0 || yy >= simRows) continue;
+      const yy = ySim + dy;
+      if (xx < 1 || xx >= cols-1 || yy < 1 || yy >= simRows-1) continue;
       const d2 = dx*dx + dy*dy;
-      const w = Math.exp(-d2 / 4); // soft drop
-      u[idx(xx, yy, simRows)] += impulseStrength * w;
+      const w = Math.exp(-d2 / 1.2); // tight gaussian
+      u[yy*cols + xx] += impulseStrength * w;
     }
   }
+}
+
+// Mouse-over -> small impulse (throttled + only when cell changes)
+canvas.addEventListener("mousemove", (e) => {
+  const now = performance.now();
+  if (now - lastStamp < 22) return; // ~45 impulses/sec max
+  lastStamp = now;
+
+  const x = Math.floor(e.clientX / cellW);
+  const yAll = Math.floor(e.clientY / cellH);
+  if (yAll < bannerRows) return;
+
+  const ySim = yAll - bannerRows;
+  if (x === lastCellX && ySim === lastCellY) return; // only when entering a new cell
+  lastCellX = x; lastCellY = ySim;
+
+  addImpulseAtCell(x, ySim);
 });
 
-// Simulation step
-function stepSim() {
+function stepSim(){
   const simRows = rows - bannerRows;
   if (simRows <= 0) return;
 
-  // Stability tip: for this simple 5-point Laplacian, keep c2 modest.
-  // Boundaries: fixed (Dirichlet) => edges ~ 0 (like pinned water surface).
-  for (let y = 0; y < simRows; y++) {
-    for (let x = 0; x < cols; x++) {
-      const i = y * cols + x;
+  for (let y=0; y<simRows; y++){
+    for (let x=0; x<cols; x++){
+      const i = y*cols + x;
 
-      // Fixed boundary
-      if (x === 0 || x === cols - 1 || y === 0 || y === simRows - 1) {
+      // fixed boundary
+      if (x===0 || x===cols-1 || y===0 || y===simRows-1){
         uNext[i] = 0;
         continue;
       }
 
-      const up = u[i - cols];
-      const down = u[i + cols];
-      const left = u[i - 1];
-      const right = u[i + 1];
       const center = u[i];
+      const lap = (u[i-cols] + u[i+cols] + u[i-1] + u[i+1] - 4*center);
 
-      const lap = (up + down + left + right - 4 * center);
-
-      // Discrete wave equation with damping
-      const next =
+      uNext[i] =
         (2 - damping) * center -
         (1 - damping) * uPrev[i] +
         c2 * lap;
-
-      uNext[i] = next;
     }
   }
 
-  // Rotate buffers: prev <- current, current <- next
   const tmp = uPrev;
   uPrev = u;
   u = uNext;
   uNext = tmp;
 }
 
-// Rendering
-function render() {
+function render(){
   ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, W, H);
+  ctx.fillRect(0,0,W,H);
 
-  // Banner
+  // banner
   ctx.fillStyle = bannerColor;
-  const bannerStartX = Math.max(0, Math.floor((cols - bannerLines[0].length) / 2));
-  for (let i = 0; i < Math.min(bannerLines.length, bannerRows - 1); i++) {
-    const line = bannerLines[i];
-    ctx.fillText(line, bannerStartX * cellW, i * cellH);
+  const startX = Math.max(0, Math.floor((cols - bannerLines[0].length) / 2));
+  for (let i=0; i<Math.min(bannerLines.length, bannerRows-1); i++){
+    ctx.fillText(bannerLines[i], startX * cellW, i * cellH);
   }
 
-  // Draw wave field as ~ and -
+  // waves
   ctx.fillStyle = waveColor;
-
   const simRows = rows - bannerRows;
-  if (simRows <= 0) return;
-
-  // Thresholds: decide when ~ becomes -
-  // Using displacement magnitude: crest/trough -> '-'
-  const thr = 0.18; // sensitivity
-
-  for (let y = 0; y < simRows; y++) {
+  for (let y=0; y<simRows; y++){
     const yPix = (y + bannerRows) * cellH;
-    for (let x = 0; x < cols; x++) {
-      const xPix = x * cellW;
-      const val = u[y * cols + x];
-
-      // Optional: more character nuance, but you asked only ~ and -
+    for (let x=0; x<cols; x++){
+      const val = u[y*cols + x];
       const ch = (Math.abs(val) > thr) ? "-" : "~";
-      ctx.fillText(ch, xPix, yPix);
+      ctx.fillText(ch, x * cellW, yPix);
     }
   }
-
-  // Small “hint”
-  ctx.fillStyle = "rgba(255,255,255,0.55)";
-  ctx.fillText("click to ripple", 2 * cellW, (bannerRows - 1) * cellH);
 }
 
 let last = performance.now();
-function loop(t) {
-  // Fixed-ish stepping: multiple sim steps if frame time is big
+function loop(t){
   const dt = Math.min(50, t - last);
   last = t;
 
-  // substeps for stability / smoother propagation
-  const substeps = Math.max(1, Math.floor(dt / 16));
-  for (let i = 0; i < substeps; i++) stepSim();
+  // fewer substeps to keep it calmer
+  const substeps = Math.max(1, Math.floor(dt / 20));
+  for (let i=0; i<substeps; i++) stepSim();
 
   render();
   requestAnimationFrame(loop);
 }
-
 requestAnimationFrame(loop);
 </script>
 </body>
