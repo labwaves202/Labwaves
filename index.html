@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LABWAVES</title>
   <style>
-    html, body { margin:0; height:100%; background:#000; overflow:hidden; cursor:crosshair; }
+    html, body { margin:0; height:100%; background:#000; overflow:hidden; }
     canvas { display:block; }
   </style>
 </head>
@@ -17,10 +17,10 @@ const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
 let W=0,H=0, cols=0, rows=0, cellW=0, cellH=0;
-const fontPx = 16;
+let fontPx = 16;
 
-// Banner
-const bannerLines = [
+// Two banners: wide (desktop) + compact (mobile)
+const bannerWide = [
   "██╗      █████╗ ██████╗ ██╗    ██╗ █████╗ ██╗   ██╗███████╗███████╗",
   "██║     ██╔══██╗██╔══██╗██║    ██║██╔══██╗██║   ██║██╔════╝██╔════╝",
   "██║     ███████║██████╔╝██║ █╗ ██║███████║██║   ██║█████╗  ███████╗",
@@ -28,36 +28,71 @@ const bannerLines = [
   "███████╗██║  ██║██████╔╝╚███╔███╔╝██║  ██║ ╚████╔╝ ███████╗███████║",
   "╚══════╝╚═╝  ╚═╝╚═════╝  ╚══╝╚══╝ ╚═╝  ╚═╝  ╚═══╝  ╚══════╝╚══════╝",
 ];
+
+const bannerCompact = [
+  " _      ___  ___ _      __   __ ___ ___ ",
+  "| |    / _ \\| _ \\ |     \\ \\ / /| _ \\ __|",
+  "| |__ | (_) |  _/ |__    \\ V / |  _/ _| ",
+  "|____| \\___/|_| |____|    |_|  |_| |___|",
+];
+
+let bannerLines = bannerWide;
 let bannerRows = bannerLines.length + 1;
 
 // Wave buffers for area below banner
 let u=null, uPrev=null, uNext=null;
 
-// Physics tuned for SMALL, LOCAL ripples
-let damping = 0.085;        // higher => shorter-lived, less overlap
-let c2 = 0.045;             // lower => less spread
-let impulseStrength = 0.35; // smaller impulse
-let impulseRadius = 0;      // 0 = single cell (clean rings)
+// Physics (small ripples)
+let damping = 0.10;       // quick decay
+let c2 = 0.045;           // limited spread
+let impulseStrength = 0.32;
+let impulseRadius = 0;    // single cell
+let lapThr = 0.18;
 
-// Render thresholds
-let lapThr = 0.16;          // threshold on curvature -> thinner fronts
-const bg = "#000000";
-const bannerColor = "#ffffff";
+// Colors
+const bg = "#000";
+const bannerColor = "#fff";
 const waveColor = "#00ffc8";
 
-// Mouse impulse throttling (key to avoid “blob”)
-let lastStamp = 0;
+// Interaction / scheduling
+let lastMouseStamp = 0;
+const MOUSE_COOLDOWN_MS = 70;  // sparse impulses on mousemove
 let lastCellX = -999, lastCellY = -999;
-const IMPULSE_COOLDOWN_MS = 55; // fewer impulses => less overlap
+
+let rngTimer = 0;
+let rngIntervalMs = 380; // random ripple cadence (mobile-friendly)
+
+// Decide “mobile-ish”
+function isSmallScreen() {
+  return Math.min(window.innerWidth, window.innerHeight) < 700;
+}
+
+function configureForScreen() {
+  const small = isSmallScreen();
+
+  // On small screens: slightly smaller font so banner fits + lower workload
+  fontPx = small ? 12 : 16;
+
+  bannerLines = small ? bannerCompact : bannerWide;
+
+  // Reduce simulation load on small screens (fewer ripples + stronger damping)
+  damping = small ? 0.12 : 0.10;
+  c2 = small ? 0.040 : 0.045;
+  impulseStrength = small ? 0.26 : 0.32;
+  lapThr = small ? 0.20 : 0.18;
+  rngIntervalMs = small ? 520 : 380;
+}
 
 function resize(){
+  configureForScreen();
+
   W = canvas.width = window.innerWidth;
   H = canvas.height = window.innerHeight;
 
   ctx.font = `${fontPx}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`;
   ctx.textBaseline = "top";
 
-  cellH = Math.round(fontPx * 1.15);
+  cellH = Math.round(fontPx * 1.18);
   cellW = Math.round(fontPx * 0.62);
 
   cols = Math.max(10, Math.floor(W / cellW));
@@ -77,36 +112,53 @@ function addImpulseAtCell(x, ySim){
   const simRows = rows - bannerRows;
   if (x <= 0 || x >= cols-1 || ySim <= 0 || ySim >= simRows-1) return;
 
-  const r = impulseRadius;
-  for (let dy=-r; dy<=r; dy++){
-    for (let dx=-r; dx<=r; dx++){
-      const xx = x + dx, yy = ySim + dy;
-      if (xx <= 0 || xx >= cols-1 || yy <= 0 || yy >= simRows-1) continue;
-      const d2 = dx*dx + dy*dy;
-      const w = (r === 0) ? 1 : Math.exp(-d2 / 1.2);
-      u[yy*cols + xx] += impulseStrength * w;
-    }
-  }
+  u[ySim*cols + x] += impulseStrength;
 }
 
-// Mouse-over generates tiny ripple, not continuous “painting”
-canvas.addEventListener("mousemove", (e) => {
-  const now = performance.now();
-  if (now - lastStamp < IMPULSE_COOLDOWN_MS) return;
-  lastStamp = now;
-
-  const x = Math.floor(e.clientX / cellW);
-  const yAll = Math.floor(e.clientY / cellH);
-  if (yAll < bannerRows) return;
-
+function pointerToCell(clientX, clientY){
+  const x = Math.floor(clientX / cellW);
+  const yAll = Math.floor(clientY / cellH);
+  if (yAll < bannerRows) return null;
   const ySim = yAll - bannerRows;
+  const simRows = rows - bannerRows;
+  if (x < 0 || x >= cols || ySim < 0 || ySim >= simRows) return null;
+  return {x, ySim};
+}
 
-  // Only when entering a NEW cell
-  if (x === lastCellX && ySim === lastCellY) return;
-  lastCellX = x; lastCellY = ySim;
+// Desktop: mousemove impulses (sparse)
+canvas.addEventListener("mousemove", (e) => {
+  if (isSmallScreen()) return;
+  const now = performance.now();
+  if (now - lastMouseStamp < MOUSE_COOLDOWN_MS) return;
+  lastMouseStamp = now;
 
-  addImpulseAtCell(x, ySim);
-});
+  const cell = pointerToCell(e.clientX, e.clientY);
+  if (!cell) return;
+
+  if (cell.x === lastCellX && cell.ySim === lastCellY) return;
+  lastCellX = cell.x; lastCellY = cell.ySim;
+
+  addImpulseAtCell(cell.x, cell.ySim);
+}, {passive:true});
+
+// Mobile + Desktop: tap/click adds a ripple (works everywhere)
+canvas.addEventListener("pointerdown", (e) => {
+  const cell = pointerToCell(e.clientX, e.clientY);
+  if (!cell) return;
+  addImpulseAtCell(cell.x, cell.ySim);
+}, {passive:true});
+
+// Random gentle ripples (works for mobile, also adds life on desktop)
+function addRandomRipple(){
+  const simRows = rows - bannerRows;
+  if (simRows <= 2) return;
+
+  // Bias slightly towards center so it looks intentional
+  const x = Math.floor(cols * (0.25 + Math.random()*0.5));
+  const y = Math.floor(simRows * (0.20 + Math.random()*0.75));
+
+  addImpulseAtCell(x, y);
+}
 
 // Wave equation step
 function stepSim(){
@@ -117,7 +169,7 @@ function stepSim(){
     for (let x=0; x<cols; x++){
       const i = y*cols + x;
 
-      // fixed boundaries (pinned)
+      // fixed boundary
       if (x===0 || x===cols-1 || y===0 || y===simRows-1){
         uNext[i] = 0;
         continue;
@@ -140,14 +192,16 @@ function render(){
   ctx.fillStyle = bg;
   ctx.fillRect(0,0,W,H);
 
-  // Banner
+  // Banner centered; if still too wide, we simply start at 0 (no cutoff shift)
   ctx.fillStyle = bannerColor;
-  const startX = Math.max(0, Math.floor((cols - bannerLines[0].length) / 2));
+  const maxLen = bannerLines.reduce((m,l)=>Math.max(m,l.length),0);
+  const startX = Math.max(0, Math.floor((cols - maxLen) / 2));
+
   for (let i=0; i<Math.min(bannerLines.length, bannerRows-1); i++){
     ctx.fillText(bannerLines[i], startX * cellW, i * cellH);
   }
 
-  // Waves: render by CURVATURE (Laplacian) -> shows thin fronts (rings)
+  // Waves by curvature (thin fronts)
   ctx.fillStyle = waveColor;
   const simRows = rows - bannerRows;
 
@@ -156,7 +210,6 @@ function render(){
     for (let x=0; x<cols; x++){
       const i = y*cols + x;
 
-      // compute laplacian for rendering too (skip edges)
       let lap = 0;
       if (x>0 && x<cols-1 && y>0 && y<simRows-1){
         const center = u[i];
@@ -167,6 +220,11 @@ function render(){
       ctx.fillText(ch, x * cellW, yPix);
     }
   }
+
+  // Minimal label (works on mobile too)
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  const hint = isSmallScreen() ? "tap to ripple" : "move / tap to ripple";
+  ctx.fillText(hint, 2 * cellW, (bannerRows - 1) * cellH);
 }
 
 let last = performance.now();
@@ -174,8 +232,15 @@ function loop(t){
   const dt = Math.min(50, t - last);
   last = t;
 
-  // calmer sim
-  const substeps = Math.max(1, Math.floor(dt / 24));
+  // Random ripple timer
+  rngTimer += dt;
+  if (rngTimer >= rngIntervalMs) {
+    rngTimer = 0;
+    addRandomRipple();
+  }
+
+  // Substeps (lower on mobile)
+  const substeps = Math.max(1, Math.floor(dt / (isSmallScreen() ? 26 : 22)));
   for (let i=0; i<substeps; i++) stepSim();
 
   render();
