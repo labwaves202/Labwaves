@@ -42,7 +42,7 @@
     <section class="box">
       <h2>Kontakt</h2>
       <p>
-        <a href="alexander.pichlhoefer@tuwien.ac.at">alexander.pichlhoefer@tuwien.ac.at</a>
+        <a href="mailto:alexander.pichlhoefer@tuwien.ac.at">alexander.pichlhoefer@tuwien.ac.at</a>
       </p>
     </section>
 
@@ -64,16 +64,25 @@
 
     // Physics
     let damping = 0.01;
-    let c2 = 0.11;
-    let impulseStrength = 0.9;
-    let impulseRadius = 2;
+    let c2 = 0.2;
+    let impulseStrength = 3;
+    let impulseRadius = 10;
 
     // Baseline + palette (always visible)
     const baseChar = "~";
     const palette = ["~","-","=","+","*","#","%","@"];
 
     // Auto ripple timing
-    const nextInterval = () => 1500 + Math.random() * 500;
+    const startTime = performance.now();
+    const nextInterval = () => {
+  const elapsed = performance.now() - startTime;
+
+  if (elapsed < 3000) {
+    return 1000;   // erste 3 Sekunden: alle 1s
+  } else {
+    return 3000;   // danach: alle 3s
+  }
+};
     let timer = 0;
     let interval = nextInterval();
 
@@ -199,6 +208,7 @@
   </script>
 </body>
 </html>
+
 
 
 
