@@ -32,15 +32,13 @@ canvas{
   top: 18px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 10;
-
+  z-index: 2;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
   font-style: italic;
   font-weight: 700;
   letter-spacing: 0.12em;
-  color: var(--text);
+  color: #000;
   font-size: clamp(22px, 4vw, 34px);
-
   background: rgba(255,255,255,0.85);
   padding: 6px 10px;
   border-radius: 10px;
@@ -87,5 +85,18 @@ canvas{
   color: rgba(0,0,0,0.65);
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   font-size: 13px;
+}
+
+/* Footer logo */
+.footer-left{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.footer-logo{
+  height: 18px;       /* klein, statisch */
+  width: auto;
+  display: block;
 }
 
