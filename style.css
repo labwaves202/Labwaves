@@ -95,9 +95,10 @@ canvas{
 }
 
 .footer-logo{
-  height: 14px;
+  height: 18px;
   opacity: 0.65;
-  filter: grayscale(100%);
+  filter: grayscale(50%);
 }
+
 
 
