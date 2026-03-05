@@ -1,175 +1,201 @@
 <!doctype html>
 <html lang="de">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Labwaves</title>
-
-<style>
-  html,body{margin:0;height:100%;background:#fff;overflow:hidden;}
-  canvas{display:block;}
-  .title{
-    position:fixed;top:18px;left:50%;transform:translateX(-50%);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
-    font-style: italic;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    color:#000;
-    font-size: clamp(22px,4vw,34px);
-    pointer-events:none;
-    background:rgba(255,255,255,0.85);
-    padding:6px 10px;border-radius:10px;
-  }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Labwaves</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 
 <body>
-<div class="title">Labwaves</div>
-<canvas id="c"></canvas>
+  <!-- Fixed background -->
+  <canvas id="c" aria-hidden="true"></canvas>
 
-<script>
-const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d");
+  <!-- Fixed title -->
+  <div class="title">Labwaves</div>
 
-let W,H,cols,rows,cellW,cellH,fontPx=16;
-let u,uPrev,uNext;
+  <!-- Scroll content -->
+  <main class="content">
+    <section class="box">
+      <h2>Willkommen</h2>
+      <p>
+        Labwaves ist ein experimentelles Radio- und Streamingformat an der Schnittstelle von
+        Sound, Wissenschaft und Raum.
+      </p>
+    </section>
 
-// physics
-let damping=0.03;
-let c2=0.15;
-let impulseStrength=2;
-let impulseRadius=1;
+    <section class="box">
+      <h2>Format</h2>
+      <p>
+        In regelmäßigen Sessions verbinden wir Live-Sets und Gespräche — aufgenommen oder gestreamt
+        aus Laboren, Werkstätten und ungewöhnlichen Orten.
+      </p>
+    </section>
 
-// ✅ baseline always visible
-const baseChar = "~";
+    <section class="box">
+      <h2>Status</h2>
+      <p>
+        Coming soon. Updates folgen.
+      </p>
+    </section>
 
-// ✅ modulation palette (no spaces!)
-const palette = ["~","-","=","+","*","#","%","@"]; // calm -> intense
+    <section class="box">
+      <h2>Kontakt</h2>
+      <p>
+        <a href="mailto:hello@labwaves.at">hello@labwaves.at</a>
+      </p>
+    </section>
 
-function nextInterval(){ return 1500 + Math.random()*500 } // 1.5–2.0s
-let timer=0, interval=nextInterval();
+    <footer class="footer">
+      <span>© <span id="y"></span> Labwaves</span>
+    </footer>
+  </main>
 
-function resize(){
-  W = canvas.width = window.innerWidth;
-  H = canvas.height = window.innerHeight;
+  <script>
+    // --- Year in footer
+    document.getElementById("y").textContent = new Date().getFullYear();
 
-  fontPx = Math.min(W,H) < 700 ? 13 : 16;
+    // --- Canvas waves (calm, auto ripple 1.5–2.0s, black on white) ---
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
 
-  ctx.font = `${fontPx}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace`;
-  ctx.textBaseline = "top";
+    let W, H, cols, rows, cellW, cellH, fontPx;
+    let u, uPrev, uNext;
 
-  cellH = Math.round(fontPx * 1.18);
-  cellW = Math.round(fontPx * 0.62);
+    // Physics
+    let damping = 0.03;
+    let c2 = 0.09;
+    let impulseStrength = 0.9;
+    let impulseRadius = 1;
 
-  cols = Math.max(10, Math.floor(W / cellW));
-  rows = Math.max(10, Math.floor(H / cellH));
+    // Baseline + palette (always visible)
+    const baseChar = "~";
+    const palette = ["~","-","=","+","*","#","%","@"];
 
-  u = new Float32Array(cols*rows);
-  uPrev = new Float32Array(cols*rows);
-  uNext = new Float32Array(cols*rows);
-}
-window.addEventListener("resize", resize);
-resize();
+    // Auto ripple timing
+    const nextInterval = () => 1500 + Math.random() * 500;
+    let timer = 0;
+    let interval = nextInterval();
 
-function impulse(x,y){
-  if (x<=1 || x>=cols-2 || y<=1 || y>=rows-2) return;
-
-  for(let dy=-impulseRadius; dy<=impulseRadius; dy++){
-    for(let dx=-impulseRadius; dx<=impulseRadius; dx++){
-      const xx=x+dx, yy=y+dy;
-      if (xx<=0 || xx>=cols-1 || yy<=0 || yy>=rows-1) continue;
-      const d2 = dx*dx + dy*dy;
-      const w = Math.exp(-d2 / 1.6);
-      u[yy*cols + xx] += impulseStrength * w;
+    function isSmallScreen() {
+      return Math.min(window.innerWidth, window.innerHeight) < 700;
     }
-  }
-}
 
-function randomRipple(){
-  const x = Math.floor(cols*(0.25 + Math.random()*0.5));
-  const y = Math.floor(rows*(0.25 + Math.random()*0.6));
-  impulse(x,y);
-}
+    function resize() {
+      W = canvas.width = window.innerWidth;
+      H = canvas.height = window.innerHeight;
 
-// tap/click works on desktop + mobile
-canvas.addEventListener("pointerdown", (e)=>{
-  const x = Math.floor(e.clientX / cellW);
-  const y = Math.floor(e.clientY / cellH);
-  impulse(x,y);
-}, {passive:true});
+      fontPx = isSmallScreen() ? 13 : 16;
+      ctx.font = `${fontPx}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace`;
+      ctx.textBaseline = "top";
 
-function step(){
-  for(let y=0; y<rows; y++){
-    for(let x=0; x<cols; x++){
-      const i = y*cols + x;
+      cellH = Math.round(fontPx * 1.18);
+      cellW = Math.round(fontPx * 0.62);
 
-      // pinned boundary
-      if (x===0 || x===cols-1 || y===0 || y===rows-1){
-        uNext[i]=0;
-        continue;
-      }
+      cols = Math.max(10, Math.floor(W / cellW));
+      rows = Math.max(10, Math.floor(H / cellH));
 
-      const c = u[i];
-      const lap = (u[i-cols] + u[i+cols] + u[i-1] + u[i+1] - 4*c);
-
-      uNext[i] = (2-damping)*c - (1-damping)*uPrev[i] + c2*lap;
+      u = new Float32Array(cols * rows);
+      uPrev = new Float32Array(cols * rows);
+      uNext = new Float32Array(cols * rows);
     }
-  }
-  const tmp=uPrev; uPrev=u; u=uNext; uNext=tmp;
-}
 
-function render(){
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0,0,W,H);
-  ctx.fillStyle = "#000";
+    window.addEventListener("resize", resize);
+    resize();
 
-  // We render wavefronts using curvature (laplacian) magnitude
-  // but we always draw a baseline char everywhere.
-  for(let y=0; y<rows; y++){
-    const yPix = y*cellH;
-    for(let x=0; x<cols; x++){
-      const i = y*cols + x;
+    function impulse(x, y) {
+      if (x <= 1 || x >= cols - 2 || y <= 1 || y >= rows - 2) return;
 
-      let lap = 0;
-      if (x>0 && x<cols-1 && y>0 && y<rows-1){
-        const c = u[i];
-        lap = (u[i-cols] + u[i+cols] + u[i-1] + u[i+1] - 4*c);
-      }
-
-      // scale curvature -> palette index
-      const v = Math.abs(lap) * 3.0; // amplify for visibility
-      let p = Math.floor(v);
-
-      if (p <= 0) {
-        ctx.fillText(baseChar, x*cellW, yPix);
-      } else {
-        p = Math.min(palette.length-1, p);
-        ctx.fillText(palette[p], x*cellW, yPix);
+      for (let dy = -impulseRadius; dy <= impulseRadius; dy++) {
+        for (let dx = -impulseRadius; dx <= impulseRadius; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx <= 0 || xx >= cols - 1 || yy <= 0 || yy >= rows - 1) continue;
+          const d2 = dx * dx + dy * dy;
+          const w = Math.exp(-d2 / 1.6);
+          u[yy * cols + xx] += impulseStrength * w;
+        }
       }
     }
-  }
-}
 
-let last = performance.now();
-function loop(t){
-  const dt = Math.min(50, t-last);
-  last = t;
+    function randomRipple() {
+      const x = Math.floor(cols * (0.25 + Math.random() * 0.5));
+      const y = Math.floor(rows * (0.25 + Math.random() * 0.6));
+      impulse(x, y);
+    }
 
-  timer += dt;
-  if (timer >= interval){
-    timer = 0;
-    interval = nextInterval();
-    randomRipple();
-  }
+    // Tap/click also triggers a small ripple (works on mobile)
+    canvas.addEventListener("pointerdown", (e) => {
+      const x = Math.floor(e.clientX / cellW);
+      const y = Math.floor(e.clientY / cellH);
+      impulse(x, y);
+    }, { passive: true });
 
-  const substeps = Math.max(1, Math.floor(dt/18));
-  for(let i=0;i<substeps;i++) step();
+    function step() {
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const i = y * cols + x;
 
-  render();
-  requestAnimationFrame(loop);
-}
-requestAnimationFrame(loop);
-</script>
+          // pinned boundary
+          if (x === 0 || x === cols - 1 || y === 0 || y === rows - 1) {
+            uNext[i] = 0;
+            continue;
+          }
+
+          const c = u[i];
+          const lap = (u[i - cols] + u[i + cols] + u[i - 1] + u[i + 1] - 4 * c);
+          uNext[i] = (2 - damping) * c - (1 - damping) * uPrev[i] + c2 * lap;
+        }
+      }
+      const tmp = uPrev; uPrev = u; u = uNext; uNext = tmp;
+    }
+
+    function render() {
+      // white bg
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.fillStyle = "#000000";
+
+      // Render wavefronts by curvature (Laplacian magnitude) with baseline visible
+      for (let y = 0; y < rows; y++) {
+        const yPix = y * cellH;
+        for (let x = 0; x < cols; x++) {
+          const i = y * cols + x;
+
+          let lap = 0;
+          if (x > 0 && x < cols - 1 && y > 0 && y < rows - 1) {
+            const c = u[i];
+            lap = (u[i - cols] + u[i + cols] + u[i - 1] + u[i + 1] - 4 * c);
+          }
+
+          const v = Math.abs(lap) * 3.0; // amplify
+          let p = Math.floor(v);
+
+          const ch = (p <= 0) ? baseChar : palette[Math.min(palette.length - 1, p)];
+          ctx.fillText(ch, x * cellW, yPix);
+        }
+      }
+    }
+
+    let last = performance.now();
+    function loop(t) {
+      const dt = Math.min(50, t - last);
+      last = t;
+
+      timer += dt;
+      if (timer >= interval) {
+        timer = 0;
+        interval = nextInterval();
+        randomRipple();
+      }
+
+      const substeps = Math.max(1, Math.floor(dt / 18));
+      for (let i = 0; i < substeps; i++) step();
+
+      render();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  </script>
 </body>
 </html>
-
