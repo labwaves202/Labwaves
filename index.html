@@ -8,13 +8,10 @@
 </head>
 
 <body>
-  <!-- Fixed background -->
   <canvas id="c" aria-hidden="true"></canvas>
 
-  <!-- Fixed title -->
   <div class="title">Labwaves</div>
 
-  <!-- Scroll content -->
   <main class="content">
     <section class="box">
       <h2>Willkommen</h2>
@@ -47,40 +44,41 @@
     </section>
 
     <footer class="footer">
-      <span>© <span id="y"></span> Labwaves</span>
+      <div class="footer-left">
+        <img class="footer-logo" src="assets/futurefit_logo.png" alt="Future Fit Logo">
+        <span>© <span id="y"></span> Labwaves</span>
+      </div>
     </footer>
   </main>
 
   <script>
-    // --- Year in footer
     document.getElementById("y").textContent = new Date().getFullYear();
 
-    // --- Canvas waves ---
+    // --- Canvas setup ---
     const canvas = document.getElementById("c");
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { alpha: false });
 
     let W, H, cols, rows, cellW, cellH, fontPx;
     let u, uPrev, uNext;
 
-    // Physics
+    // Physics (tune as you like)
     let damping = 0.01;
-    let c2 = 0.2;
+    let c2 = 0.20;
     let impulseStrength = 3;
-    let impulseRadius = 10; // intended radius (cells)
+    let impulseRadius = 10; // cells (integer is best)
 
-    // Baseline + palette (always visible)
+    // ASCII
     const baseChar = "~";
     const palette = ["~","-","=","+","*","#","%","@"];
 
-    // Auto ripple timing (1s for first 3s, then 3s)
+    // Timing: first 3s quick (1s), then 3s
     const startTime = performance.now();
     const nextInterval = () => {
       const elapsed = performance.now() - startTime;
       return (elapsed < 3000) ? 1000 : 3000;
     };
-
-    let timer = 0;
-    let interval = nextInterval();
+    let rippleTimer = 0;
+    let rippleInterval = nextInterval();
 
     function isSmallScreen() {
       return Math.min(window.innerWidth, window.innerHeight) < 700;
@@ -105,15 +103,13 @@
       uNext = new Float32Array(cols * rows);
     }
 
-    window.addEventListener("resize", resize);
+    window.addEventListener("resize", resize, { passive: true });
     resize();
-    randomRipple();
+
     function impulse(x, y) {
       if (x <= 1 || x >= cols - 2 || y <= 1 || y >= rows - 2) return;
 
-      // ✅ ensure integer radius (prevents float index issues)
-      const r = Math.max(0, Math.round(impulseRadius));
-
+      const r = Math.max(0, Math.round(impulseRadius)); // safety
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
           const xx = x + dx, yy = y + dy;
@@ -132,19 +128,18 @@
       impulse(x, y);
     }
 
-    // Tap/click triggers a ripple (works on mobile)
+    // Tap/click ripple (works mobile + desktop)
     canvas.addEventListener("pointerdown", (e) => {
       const x = Math.floor(e.clientX / cellW);
       const y = Math.floor(e.clientY / cellH);
       impulse(x, y);
     }, { passive: true });
 
-    function step() {
+    function stepSim() {
       for (let y = 0; y < rows; y++) {
         for (let x = 0; x < cols; x++) {
           const i = y * cols + x;
 
-          // pinned boundary
           if (x === 0 || x === cols - 1 || y === 0 || y === rows - 1) {
             uNext[i] = 0;
             continue;
@@ -155,6 +150,7 @@
           uNext[i] = (2 - damping) * c - (1 - damping) * uPrev[i] + c2 * lap;
         }
       }
+
       const tmp = uPrev; uPrev = u; u = uNext; uNext = tmp;
     }
 
@@ -175,52 +171,68 @@
             lap = (u[i - cols] + u[i + cols] + u[i - 1] + u[i + 1] - 4 * c);
           }
 
-          const v = Math.abs(lap) * 3.0; // amplify
+          const v = Math.abs(lap) * 3.0;
           const p = Math.floor(v);
-
           const ch = (p <= 0) ? baseChar : palette[Math.min(palette.length - 1, p)];
           ctx.fillText(ch, x * cellW, yPix);
         }
       }
     }
 
-    // ✅ Fix mobile "speed-up after scroll": clamp dt & cap substeps; reset last on scroll/visibility
-    let last = performance.now();
+    // --- Physically robust time integration (fixed timestep + accumulator) ---
+    const FIXED_DT_MS = 16.6667;     // 60 Hz simulation
+    const MAX_CATCHUP_MS = 100;      // don't accumulate huge backlogs
+    const MAX_STEPS_PER_FRAME = 5;   // hard cap
 
-    function resetClock() {
-      last = performance.now();
-    }
+    let lastTime = performance.now();
+    let accumulator = 0;
 
-    document.addEventListener("visibilitychange", resetClock, { passive: true });
-    window.addEventListener("scroll", resetClock, { passive: true });
+    function loop(now) {
+      let frameDt = now - lastTime;
+      lastTime = now;
 
-    function loop(t) {
-      let dt = t - last;
-      last = t;
+      // Avoid huge dt jumps after throttling/scroll/visibility changes
+      if (frameDt > 250) frameDt = 16.6667;
 
-      // If the browser throttled/paused (common during scroll), don't "catch up" aggressively
-      if (dt > 120) dt = 16;
+      accumulator += Math.min(frameDt, MAX_CATCHUP_MS);
 
-      // Clamp dt further
-      dt = Math.min(dt, 32);
-
-      timer += dt;
-      if (timer >= interval) {
-        timer = 0;
-        interval = nextInterval();
+      // Ripple scheduling based on real frame time (not sim steps)
+      rippleTimer += frameDt;
+      if (rippleTimer >= rippleInterval) {
+        rippleTimer = 0;
+        rippleInterval = nextInterval();
         randomRipple();
       }
 
-      // Hard-cap substeps to prevent simulation jumping forward
-      const substeps = Math.min(2, Math.max(1, Math.floor(dt / 16)));
-      for (let i = 0; i < substeps; i++) step();
+      let steps = 0;
+      while (accumulator >= FIXED_DT_MS && steps < MAX_STEPS_PER_FRAME) {
+        stepSim();
+        accumulator -= FIXED_DT_MS;
+        steps++;
+      }
+
+      // If backlog still huge, drop it (prevents sudden speed-ups)
+      if (accumulator > FIXED_DT_MS * MAX_STEPS_PER_FRAME) {
+        accumulator = 0;
+      }
 
       render();
       requestAnimationFrame(loop);
     }
 
+    // Reset clocks when page visibility changes (extra safety on mobile)
+    document.addEventListener("visibilitychange", () => {
+      lastTime = performance.now();
+      accumulator = 0;
+    }, { passive: true });
+
+    window.addEventListener("scroll", () => {
+      // Scrolling can pause rAF; resetting avoids “catch-up”
+      lastTime = performance.now();
+      accumulator = 0;
+    }, { passive: true });
+
     requestAnimationFrame(loop);
   </script>
 </body>
 </html>
-
