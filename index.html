@@ -55,7 +55,7 @@
     // --- Year in footer
     document.getElementById("y").textContent = new Date().getFullYear();
 
-    // --- Canvas waves (calm, auto ripple 1.5–2.0s, black on white) ---
+    // --- Canvas waves ---
     const canvas = document.getElementById("c");
     const ctx = canvas.getContext("2d");
 
@@ -66,23 +66,19 @@
     let damping = 0.01;
     let c2 = 0.2;
     let impulseStrength = 3;
-    let impulseRadius = 10;
+    let impulseRadius = 10; // intended radius (cells)
 
     // Baseline + palette (always visible)
     const baseChar = "~";
     const palette = ["~","-","=","+","*","#","%","@"];
 
-    // Auto ripple timing
+    // Auto ripple timing (1s for first 3s, then 3s)
     const startTime = performance.now();
     const nextInterval = () => {
-  const elapsed = performance.now() - startTime;
+      const elapsed = performance.now() - startTime;
+      return (elapsed < 3000) ? 1000 : 3000;
+    };
 
-  if (elapsed < 3000) {
-    return 1000;   // erste 3 Sekunden: alle 1s
-  } else {
-    return 3000;   // danach: alle 3s
-  }
-};
     let timer = 0;
     let interval = nextInterval();
 
@@ -115,10 +111,14 @@
     function impulse(x, y) {
       if (x <= 1 || x >= cols - 2 || y <= 1 || y >= rows - 2) return;
 
-      for (let dy = -impulseRadius; dy <= impulseRadius; dy++) {
-        for (let dx = -impulseRadius; dx <= impulseRadius; dx++) {
+      // ✅ ensure integer radius (prevents float index issues)
+      const r = Math.max(0, Math.round(impulseRadius));
+
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
           const xx = x + dx, yy = y + dy;
           if (xx <= 0 || xx >= cols - 1 || yy <= 0 || yy >= rows - 1) continue;
+
           const d2 = dx * dx + dy * dy;
           const w = Math.exp(-d2 / 1.6);
           u[yy * cols + xx] += impulseStrength * w;
@@ -132,7 +132,7 @@
       impulse(x, y);
     }
 
-    // Tap/click also triggers a small ripple (works on mobile)
+    // Tap/click triggers a ripple (works on mobile)
     canvas.addEventListener("pointerdown", (e) => {
       const x = Math.floor(e.clientX / cellW);
       const y = Math.floor(e.clientY / cellH);
@@ -159,13 +159,11 @@
     }
 
     function render() {
-      // white bg
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, W, H);
 
       ctx.fillStyle = "#000000";
 
-      // Render wavefronts by curvature (Laplacian magnitude) with baseline visible
       for (let y = 0; y < rows; y++) {
         const yPix = y * cellH;
         for (let x = 0; x < cols; x++) {
@@ -178,7 +176,7 @@
           }
 
           const v = Math.abs(lap) * 3.0; // amplify
-          let p = Math.floor(v);
+          const p = Math.floor(v);
 
           const ch = (p <= 0) ? baseChar : palette[Math.min(palette.length - 1, p)];
           ctx.fillText(ch, x * cellW, yPix);
@@ -186,10 +184,25 @@
       }
     }
 
+    // ✅ Fix mobile "speed-up after scroll": clamp dt & cap substeps; reset last on scroll/visibility
     let last = performance.now();
+
+    function resetClock() {
+      last = performance.now();
+    }
+
+    document.addEventListener("visibilitychange", resetClock, { passive: true });
+    window.addEventListener("scroll", resetClock, { passive: true });
+
     function loop(t) {
-      const dt = Math.min(50, t - last);
+      let dt = t - last;
       last = t;
+
+      // If the browser throttled/paused (common during scroll), don't "catch up" aggressively
+      if (dt > 120) dt = 16;
+
+      // Clamp dt further
+      dt = Math.min(dt, 32);
 
       timer += dt;
       if (timer >= interval) {
@@ -198,17 +211,15 @@
         randomRipple();
       }
 
-      const substeps = Math.max(1, Math.floor(dt / 18));
+      // Hard-cap substeps to prevent simulation jumping forward
+      const substeps = Math.min(2, Math.max(1, Math.floor(dt / 16)));
       for (let i = 0; i < substeps; i++) step();
 
       render();
       requestAnimationFrame(loop);
     }
+
     requestAnimationFrame(loop);
   </script>
 </body>
 </html>
-
-
-
-
