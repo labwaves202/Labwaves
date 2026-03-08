@@ -44,10 +44,9 @@ canvas{
   border-radius: 10px;
 }
 
-h1 {
-  font-size: 3rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+.title h1{
+  margin: 0;
+  font-size: inherit;
 }
 
 .content{
@@ -121,6 +120,7 @@ h1 {
   opacity: 0.65;
   filter: grayscale(50%);
 }
+
 
 
 
