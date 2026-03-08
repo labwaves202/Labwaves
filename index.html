@@ -7,6 +7,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Labwaves</title>
   <link rel="stylesheet" href="style.css" />
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Labwaves",
+  "url": "https://labwaves.at",
+  "description": "Experimental radio and streaming format at the intersection of music, science and space.",
+  "sameAs": [
+    "https://youtube.com/@labwaves"
+  ]
+}
+</script>
 </head>
 
 <body>
@@ -75,7 +87,7 @@
     let W, H, cols, rows, cellW, cellH, fontPx;
     let u, uPrev, uNext;
 
-    // Physics (tune as you like)
+    // Physics
     let damping = 0.01;
     let c2 = 0.20;
     let impulseStrength = 3;
@@ -193,7 +205,7 @@
       }
     }
 
-    // --- Physically robust time integration (fixed timestep + accumulator) ---
+    // Physically robust time integration
     const FIXED_DT_MS = 16.6667;     // 60 Hz simulation
     const MAX_CATCHUP_MS = 100;      // don't accumulate huge backlogs
     const MAX_STEPS_PER_FRAME = 5;   // hard cap
@@ -225,7 +237,7 @@
         steps++;
       }
 
-      // If backlog still huge, drop it (prevents sudden speed-ups)
+      // prevents sudden speed-ups
       if (accumulator > FIXED_DT_MS * MAX_STEPS_PER_FRAME) {
         accumulator = 0;
       }
@@ -234,7 +246,7 @@
       requestAnimationFrame(loop);
     }
 
-    // Reset clocks when page visibility changes (extra safety on mobile)
+    // Reset clocks when page visibility changes
     document.addEventListener("visibilitychange", () => {
       lastTime = performance.now();
       accumulator = 0;
@@ -250,6 +262,7 @@
   </script>
 </body>
 </html>
+
 
 
 
