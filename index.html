@@ -24,7 +24,7 @@
 <body>
   <canvas id="c" aria-hidden="true"></canvas>
 
-  <div class="title">Labwaves</div>
+  <div class="title"><h1>Labwaves</h1></div>
 
   <main class="content">
     <section class="box">
@@ -88,10 +88,10 @@
     let u, uPrev, uNext;
 
     // Physics
-    let damping = 0.01;
+    let damping = 0.005;
     let c2 = 0.20;
-    let impulseStrength = 3;
-    let impulseRadius = 10; // cells (integer is best)
+    let impulseStrength = 4;
+    let impulseRadius = 12; // cells (integer)
 
     // ASCII
     const baseChar = "~";
@@ -101,7 +101,7 @@
     const startTime = performance.now();
     const nextInterval = () => {
       const elapsed = performance.now() - startTime;
-      return (elapsed < 3000) ? 1000 : 3000;
+      return (elapsed < 2000) ? 1000 : 2000;
     };
     let rippleTimer = 0;
     let rippleInterval = nextInterval();
@@ -262,6 +262,7 @@
   </script>
 </body>
 </html>
+
 
 
 
