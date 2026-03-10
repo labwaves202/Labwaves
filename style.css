@@ -121,6 +121,36 @@ canvas{
   filter: grayscale(50%);
 }
 
+/* CTA section */
+
+.cta-list{
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cta-item{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(0,0,0,0.18);
+}
+
+.cta-item strong{
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.cta-item span{
+  font-size: 15px;
+}
+
+.cta-contact{
+  margin-top: 14px;
+  font-size: 15px;
+}
 
 
 
