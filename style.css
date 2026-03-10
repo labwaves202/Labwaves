@@ -64,6 +64,10 @@ canvas{
   box-shadow: var(--shadow);
   color: var(--text);
 
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(0,0,0,0.06);
+
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   line-height: 1.5;
 }
@@ -152,6 +156,28 @@ canvas{
   font-size: 15px;
 }
 
+/* Kontaktbox Layout */
+
+.contact-row{
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 20px;
+}
+
+.contact-meta{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: rgba(0,0,0,0.65);
+}
+
+.contact-logo{
+  height: 26px;
+  opacity: 0.65;
+  filter: grayscale(50%);
+}
 
 
 
